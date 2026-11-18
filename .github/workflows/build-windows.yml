@@ -1,0 +1,52 @@
+name: Build Windows installer
+
+on:
+  push:
+    branches: [main, master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - name: Get source
+        uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.10'
+
+      - name: Build desktop application
+        shell: pwsh
+        run: .\build.ps1
+
+      - name: Install Inno Setup if needed
+        shell: pwsh
+        run: |
+          $possible = @(
+            (Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 6\ISCC.exe'),
+            (Join-Path $env:ProgramFiles 'Inno Setup 6\ISCC.exe')
+          )
+          $compiler = $possible | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
+          if (-not $compiler) {
+            choco install innosetup --yes --no-progress
+            if ($LASTEXITCODE -ne 0) { throw 'Não foi possível instalar o Inno Setup.' }
+            $compiler = $possible | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
+          }
+          if (-not $compiler) { throw 'ISCC.exe não foi encontrado após a instalação.' }
+
+      - name: Build installer
+        shell: pwsh
+        run: .\compile-installer.ps1
+
+      - name: Publish downloadable installer artifact
+        uses: actions/upload-artifact@v6
+        with:
+          name: PDF-para-Markdown-Setup-Windows-x64
+          path: dist-installer/*.exe
+          if-no-files-found: error
+          retention-days: 14
